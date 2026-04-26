@@ -22,9 +22,9 @@ def chunk_text(
 
     while i < len(words):
         slice_words = words[i : i + chunk_size]
-        chunk_text = " ".join(slice_words).strip()
-        if chunk_text:
-            chunks.append(Chunk(id=f"{source}-{index}", text=chunk_text, index=index, source=source))
+        chunk_str = " ".join(slice_words).strip()
+        if chunk_str:
+            chunks.append(Chunk(id=f"{source}-{index}", text=chunk_str, index=index, source=source))
             index += 1
         if i + chunk_size >= len(words):
             break

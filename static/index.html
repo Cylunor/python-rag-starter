@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Python RAG Starter — Cylunor</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+    .wrap{max-width:700px;margin:0 auto;padding:3rem 1.5rem}
+    h1{font-size:1.875rem;font-weight:700;color:#fff;margin-bottom:.375rem}
+    .sub{color:#64748b;font-size:.875rem;margin-bottom:2rem}
+    .sub a{color:#22d3ee;text-decoration:none}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:1rem;padding:1.5rem;margin-bottom:1.25rem}
+    .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:.625rem}
+    .drop{border:2px dashed #334155;border-radius:.625rem;padding:1.75rem;text-align:center;cursor:pointer;transition:border-color .15s}
+    .drop:hover{border-color:#22d3ee}
+    .drop p{color:#94a3b8;font-size:.875rem}
+    .stat{display:flex;align-items:center;gap:.5rem;font-size:.8rem;margin-top:.875rem}
+    .dot{width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0}
+    .dot.on{background:#22c55e}
+    textarea{width:100%;background:#0f172a;border:1px solid #334155;border-radius:.625rem;padding:.75rem 1rem;color:#e2e8f0;font-size:.875rem;resize:none;font-family:inherit}
+    textarea:focus{outline:none;border-color:#475569}
+    button{width:100%;padding:.75rem;background:#fff;color:#0f172a;border:none;border-radius:.625rem;font-size:.875rem;font-weight:600;cursor:pointer;transition:background .15s;margin-top:.625rem}
+    button:hover:not(:disabled){background:#e2e8f0}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .ans-box{background:#0f172a;border:1px solid #334155;border-radius:.625rem;padding:1rem;margin-top:.875rem}
+    .ans-txt{font-size:.875rem;line-height:1.8;color:#cbd5e1;white-space:pre-wrap}
+    .tags{margin-top:.625rem;display:flex;flex-wrap:wrap;gap:.375rem}
+    .tag{font-size:.7rem;background:#1e293b;border:1px solid #334155;border-radius:.375rem;padding:.2rem .5rem;color:#94a3b8}
+    .spin{display:inline-block;width:14px;height:14px;border:2px solid #334155;border-top-color:#22d3ee;border-radius:50%;animation:sp .65s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    footer{text-align:center;font-size:.75rem;color:#334155;margin-top:2.5rem}
+    footer a{color:#475569;text-decoration:none}
+    footer a:hover{color:#94a3b8}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Python RAG Starter</h1>
+  <p class="sub">OpenAI embeddings + Anthropic Claude · Built by <a href="https://cylunor.com" target="_blank" rel="noopener">Cylunor</a></p>
+
+  <div class="card">
+    <div class="lbl">1 — Upload documents</div>
+    <div class="drop" id="dropZone">
+      <input type="file" id="fileIn" accept=".txt,.md,.csv" multiple style="display:none" />
+      <p>Click to upload .txt / .md / .csv files</p>
+    </div>
+    <div class="stat">
+      <div class="dot" id="dot"></div>
+      <span id="statTxt">No documents indexed</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">2 — Ask a question</div>
+    <textarea id="q" rows="3" placeholder="What would you like to know about your documents?"></textarea>
+    <button id="askBtn" disabled>Ask</button>
+    <div id="ansSection" style="display:none">
+      <div class="ans-box">
+        <div class="lbl">Answer</div>
+        <div class="ans-txt" id="ansTxt"></div>
+        <div class="tags" id="srcTags"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Built by <a href="https://cylunor.com" target="_blank" rel="noopener">Cylunor</a> &mdash; <a href="https://github.com/Cylunor/python-rag-starter" target="_blank" rel="noopener">View on GitHub</a></footer>
+</div>
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileIn   = document.getElementById('fileIn');
+const dot      = document.getElementById('dot');
+const statTxt  = document.getElementById('statTxt');
+const askBtn   = document.getElementById('askBtn');
+const qInput   = document.getElementById('q');
+const ansSection = document.getElementById('ansSection');
+const ansTxt   = document.getElementById('ansTxt');
+const srcTags  = document.getElementById('srcTags');
+
+dropZone.addEventListener('click', () => fileIn.click());
+fileIn.addEventListener('change', () => uploadFiles(fileIn.files));
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    if (d.ready) {
+      dot.classList.add('on');
+      statTxt.textContent = d.chunks_indexed + ' chunks indexed';
+      askBtn.disabled = false;
+    } else {
+      dot.classList.remove('on');
+      statTxt.textContent = 'No documents indexed';
+      askBtn.disabled = true;
+    }
+  } catch (_) {}
+}
+
+async function uploadFiles(files) {
+  for (const f of Array.from(files)) {
+    const fd = new FormData();
+    fd.append('file', f);
+    await fetch('/api/documents', { method: 'POST', body: fd });
+  }
+  await checkStatus();
+}
+
+askBtn.addEventListener('click', async () => {
+  const question = qInput.value.trim();
+  if (!question) return;
+  askBtn.disabled = true;
+  const spinner = document.createElement('span');
+  spinner.className = 'spin';
+  askBtn.textContent = '';
+  askBtn.appendChild(spinner);
+  ansSection.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const d = await r.json();
+    ansTxt.textContent = d.answer;
+    srcTags.textContent = '';
+    d.sources.forEach(s => {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = s;
+      srcTags.appendChild(tag);
+    });
+    ansSection.style.display = 'block';
+  } catch (e) {
+    ansTxt.textContent = 'Error: ' + e.message;
+    ansSection.style.display = 'block';
+  } finally {
+    askBtn.disabled = false;
+    askBtn.textContent = 'Ask';
+  }
+});
+
+checkStatus();
+setInterval(checkStatus, 5000);
+</script>
+</body>
+</html>
